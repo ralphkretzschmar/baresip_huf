@@ -23,6 +23,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${GTK3_LIBRARIES})
 
 if(MSVC)
   target_compile_options(${PROJECT_NAME} PRIVATE
+      /wd4068
+      /wd4141
       /wd4996
   )
 else()
