@@ -22,7 +22,6 @@ jobs:
             environment_script: "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat",
             build: "Debug",
             openssl: true,
-            openssl_version: "3.5.2",
             disable_openssl: "OFF",
             testing: true
           }
@@ -32,7 +31,6 @@ jobs:
             environment_script: "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat",
             build: "Release",
             openssl: true,
-            openssl_version: "3.5.2",
             disable_openssl: "OFF",
             testing: true
           }
@@ -49,50 +47,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install OpenSSL
+      - name: Install OpenSSL dependencies
         if: ${{ matrix.config.openssl }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
 
-          function Test-ChocoSuccess {
-            param([int]$Code)
-            return ($Code -eq 0 -or $Code -eq 3010)
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
+          if (Test-Path $vcpkgRoot) {
+            Remove-Item -Recurse -Force $vcpkgRoot
           }
 
-          $extraPackages = '${{ matrix.config.choco }}'
-          if (-not [string]::IsNullOrWhiteSpace($extraPackages)) {
-            choco install --no-progress $extraPackages
-            if (-not (Test-ChocoSuccess $LASTEXITCODE)) {
-              throw "Failed to install Chocolatey packages: $extraPackages (exit code $LASTEXITCODE)"
-            }
-          }
+          git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
 
-          $preferredVersion = '${{ matrix.config.openssl_version }}'
-          if ([string]::IsNullOrWhiteSpace($preferredVersion)) {
-            $preferredVersion = '3.5.2'
-          }
+          & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
 
-          Write-Host "Attempting to install OpenSSL $preferredVersion from Chocolatey."
-          choco install --no-progress openssl --version $preferredVersion
-          $installExit = $LASTEXITCODE
+          & "$vcpkgRoot\vcpkg.exe" install openssl:x64-windows
 
-          if (Test-ChocoSuccess $installExit) {
-            Write-Host "OpenSSL $preferredVersion installed successfully."
-            return
-          }
-
-          Write-Warning "OpenSSL $preferredVersion could not be installed (exit code $installExit). Falling back to the latest available package."
-          choco uninstall --yes openssl | Out-Null
-
-          choco install --no-progress openssl
-          $fallbackExit = $LASTEXITCODE
-
-          if (-not (Test-ChocoSuccess $fallbackExit)) {
-            throw "Fallback installation of OpenSSL failed with exit code $fallbackExit."
-          }
-
-          Write-Host "Installed the latest available OpenSSL package from Chocolatey (exit code $fallbackExit)."
+          $toolchainFile = Join-Path $vcpkgRoot 'scripts\buildsystems\vcpkg.cmake'
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_ROOT=$vcpkgRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_TOOLCHAIN_FILE=$toolchainFile"
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_DEFAULT_TRIPLET=x64-windows"
 
       - uses: sreimers/pr-dependency-action@v1
         with:
@@ -119,7 +94,9 @@ jobs:
           call "${{ matrix.config.environment_script }}"
           if not exist re\include mkdir re\include
           copy /Y include\msvc_compat\unistd.h re\include\unistd.h
-          cmake -S re -B re/build -G "Ninja" -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=${{ matrix.config.disable_openssl }}
+          set "TOOLCHAIN_ARG="
+          if defined CMAKE_TOOLCHAIN_FILE set "TOOLCHAIN_ARG=-DCMAKE_TOOLCHAIN_FILE=""%CMAKE_TOOLCHAIN_FILE%"""
+          cmake -S re -B re/build -G "Ninja" %TOOLCHAIN_ARG% -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=${{ matrix.config.disable_openssl }}
           if not exist re\build\include mkdir re\build\include
           copy /Y include\msvc_compat\unistd.h re\build\include\unistd.h
           cmake --build re/build -j
@@ -129,7 +106,9 @@ jobs:
         shell: cmd
         run: |
           call "${{ matrix.config.environment_script }}"
-          cmake -S . -B build -G "Ninja" -DCMAKE_C_FLAGS="/WX" -DCMAKE_BUILD_TYPE=${{ matrix.config.build }} -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=${{ matrix.config.disable_openssl }}
+          set "TOOLCHAIN_ARG="
+          if defined CMAKE_TOOLCHAIN_FILE set "TOOLCHAIN_ARG=-DCMAKE_TOOLCHAIN_FILE=""%CMAKE_TOOLCHAIN_FILE%"""
+          cmake -S . -B build -G "Ninja" %TOOLCHAIN_ARG% -DCMAKE_C_FLAGS="/WX" -DCMAKE_BUILD_TYPE=${{ matrix.config.build }} -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=${{ matrix.config.disable_openssl }}
           cmake --build build -j
 
       - name: Verify GTK module detection
