@@ -182,6 +182,29 @@ if(MSVC AND DEFINED BARESIP_MSVC_COMPAT_DIR)
     target_include_directories(${_re_target} BEFORE PRIVATE ${BARESIP_MSVC_COMPAT_DIR})
   endforeach()
 
+  if(DEFINED libre_SOURCE_DIR)
+    set(_libre_source_include_dir "${libre_SOURCE_DIR}/include")
+    if(EXISTS "${_libre_source_include_dir}")
+      configure_file(
+        "${BARESIP_MSVC_COMPAT_DIR}/unistd.h"
+        "${_libre_source_include_dir}/unistd.h"
+        COPYONLY
+      )
+    endif()
+    unset(_libre_source_include_dir)
+  endif()
+
+  if(DEFINED libre_BINARY_DIR)
+    set(_libre_binary_include_dir "${libre_BINARY_DIR}/include")
+    file(MAKE_DIRECTORY "${_libre_binary_include_dir}")
+    configure_file(
+      "${BARESIP_MSVC_COMPAT_DIR}/unistd.h"
+      "${_libre_binary_include_dir}/unistd.h"
+      COPYONLY
+    )
+    unset(_libre_binary_include_dir)
+  endif()
+
   unset(_re_target)
   unset(_re_targets)
 endif()
