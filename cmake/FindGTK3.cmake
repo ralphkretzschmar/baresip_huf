@@ -11,8 +11,11 @@
 
 set(_GTK3_PKGCONFIG_FOUND FALSE)
 
+# pkg-config provides GCC style import libraries which are not compatible
+# with MSVC builds.  Skip the pkg-config path so that Windows/MSVC uses the
+# manual discovery logic below instead.
 find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
+if(PkgConfig_FOUND AND NOT MSVC)
   pkg_check_modules(GTK3 QUIET gtk+-3.0)
   if(GTK3_FOUND)
     set(_GTK3_PKGCONFIG_FOUND TRUE)
