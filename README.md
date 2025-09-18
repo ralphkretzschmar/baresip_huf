@@ -143,7 +143,10 @@ Distributed under BSD license
 baresip is using CMake, and the following packages must be
 installed before building:
 
-* [libre](https://github.com/baresip/re)
+* [libre](https://github.com/baresip/re) (automatically fetched during CMake
+  configuration when not already available)
+  The automatic download of libre can be disabled via the CMake option
+  `-DBARESIP_FETCH_RE=OFF` if you prefer to use an existing installation.
 * [openssl](https://www.openssl.org/)
 
 See [Wiki: Install Stable Release](https://github.com/baresip/baresip/wiki/Install:-Stable-Release)
