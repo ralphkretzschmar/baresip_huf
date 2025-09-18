@@ -20,6 +20,9 @@ set(PROJECT_SOVERSION 22) # bump if ABI breaks
 # Additional compatibility headers for the MSVC toolchain.
 if(MSVC)
   set(BARESIP_MSVC_COMPAT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/msvc_compat")
+  set(BARESIP_MSVC_COMPAT_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/msvc_compat/mingw_compat.c"
+  )
   include_directories(BEFORE "${BARESIP_MSVC_COMPAT_DIR}")
 endif()
 
@@ -158,7 +161,7 @@ set(RE_FOUND TRUE)
 if(MSVC AND DEFINED BARESIP_MSVC_COMPAT_DIR)
   set(_re_targets)
 
-  foreach(_candidate re libre)
+  foreach(_candidate re libre re-objs)
     if(TARGET ${_candidate})
       list(APPEND _re_targets ${_candidate})
     endif()
@@ -172,14 +175,29 @@ if(MSVC AND DEFINED BARESIP_MSVC_COMPAT_DIR)
     unset(_re_alias_target)
   endif()
 
-  if(TARGET re-objs)
-    list(APPEND _re_targets re-objs)
-  endif()
-
   list(REMOVE_DUPLICATES _re_targets)
 
   foreach(_re_target IN LISTS _re_targets)
     target_include_directories(${_re_target} BEFORE PRIVATE ${BARESIP_MSVC_COMPAT_DIR})
+
+    if(BARESIP_MSVC_COMPAT_SOURCES)
+      get_target_property(_target_type ${_re_target} TYPE)
+      if(_target_type AND NOT _target_type STREQUAL "INTERFACE_LIBRARY")
+        target_sources(${_re_target} PRIVATE ${BARESIP_MSVC_COMPAT_SOURCES})
+
+        if(NOT _target_type STREQUAL "OBJECT_LIBRARY")
+          target_link_libraries(${_re_target}
+            PRIVATE
+              legacy_stdio_definitions
+              ws2_32
+              wsock32
+              wspi32
+              crypt32
+          )
+        endif()
+      endif()
+      unset(_target_type)
+    endif()
   endforeach()
 
   if(DEFINED libre_SOURCE_DIR)
@@ -433,7 +451,18 @@ endif()
 set(LINKLIBS ${RE_LIBRARIES} ${RE_LIBS})
 
 if(WIN32)
-  list(APPEND LINKLIBS winmm gdi32 crypt32 strmiids ole32 oleaut32)
+  list(APPEND LINKLIBS
+    winmm
+    gdi32
+    crypt32
+    strmiids
+    ole32
+    oleaut32
+    legacy_stdio_definitions
+    ws2_32
+    wsock32
+    wspi32
+  )
 endif()
 
 if(STATIC)
