@@ -17,6 +17,12 @@ project(baresip VERSION 4.1.0)
 
 set(PROJECT_SOVERSION 22) # bump if ABI breaks
 
+# Additional compatibility headers for the MSVC toolchain.
+if(MSVC)
+  set(BARESIP_MSVC_COMPAT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/msvc_compat")
+  include_directories(BEFORE "${BARESIP_MSVC_COMPAT_DIR}")
+endif()
+
 # Pre-release identifier, comment out on a release
 # Increment for breaking changes (dev2, dev3...)
 #set(PROJECT_VERSION_PRE dev)
@@ -148,6 +154,37 @@ list(REMOVE_ITEM RE_INCLUDE_DIRS "")
 set(RE_INCLUDE_DIR ${RE_INCLUDE_DIRS})
 set(RE_LIBRARY ${RE_LIBRARIES})
 set(RE_FOUND TRUE)
+
+if(MSVC AND DEFINED BARESIP_MSVC_COMPAT_DIR)
+  set(_re_targets)
+
+  foreach(_candidate re libre)
+    if(TARGET ${_candidate})
+      list(APPEND _re_targets ${_candidate})
+    endif()
+  endforeach()
+
+  if(TARGET re::re)
+    get_target_property(_re_alias_target re::re ALIASED_TARGET)
+    if(_re_alias_target)
+      list(APPEND _re_targets ${_re_alias_target})
+    endif()
+    unset(_re_alias_target)
+  endif()
+
+  if(TARGET re-objs)
+    list(APPEND _re_targets re-objs)
+  endif()
+
+  list(REMOVE_DUPLICATES _re_targets)
+
+  foreach(_re_target IN LISTS _re_targets)
+    target_include_directories(${_re_target} BEFORE PRIVATE ${BARESIP_MSVC_COMPAT_DIR})
+  endforeach()
+
+  unset(_re_target)
+  unset(_re_targets)
+endif()
 
 ##############################################################################
 #
@@ -373,7 +410,6 @@ endif()
 if(STATIC)
   add_library(baresip STATIC ${SRCS} ${HEADERS})
   target_link_libraries(baresip PUBLIC ${LINKLIBS} ${MODULES_DETECTED})
-  target_include_directories(baresip PUBLIC include)
 else()
   add_library(baresip SHARED ${SRCS} ${HEADERS})
   target_link_libraries(baresip PRIVATE ${LINKLIBS})
@@ -385,6 +421,13 @@ endif()
 if(MSVC)
   set_target_properties(baresip PROPERTIES OUTPUT_NAME "libbaresip")
 endif()
+
+set(_baresip_public_includes ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(MSVC)
+  list(APPEND _baresip_public_includes ${BARESIP_MSVC_COMPAT_DIR})
+endif()
+target_include_directories(baresip PUBLIC ${_baresip_public_includes})
+unset(_baresip_public_includes)
 
 set_target_properties(baresip PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
