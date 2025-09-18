@@ -3,132 +3,103 @@ name: Build
 on:
   push:
     branches:
-    - main
+      - main
   pull_request:
     branches:
-    - main
-    - stable
+      - main
+      - stable
+  workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        compiler: [gcc, clang, gcc-14]
-        os: [ubuntu-22.04, ubuntu-24.04, macos-latest]
-        exclude:
-          - os: macos-latest
-            compiler: gcc
-          - os: macos-latest
-            compiler: gcc-14
-          - os: ubuntu-22.04
-            compiler: gcc-14
-    env:
-      CC: ${{ matrix.compiler }}
-      MACOSX_DEPLOYMENT_TARGET: "10.12"
+  mingw-build:
+    name: Build Windows binaries (MinGW)
+    runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v5
+      - name: fix flaky azure mirrors
+        run: |
+          sudo sed -i 's/azure\./de\./' /etc/apt/sources.list
 
-    - name: openssl path macos
-      if: ${{ runner.os == 'macOS' }}
-      run: |
-        echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
+      - name: Install MinGW toolchain
+        run: |
+          sudo apt-get update && sudo apt-get install -y mingw-w64
 
-    - name: fix flaky azure mirrors
-      if: ${{ runner.os == 'Linux' }}
-      run: |
-        sudo sed -i 's/azure\./de\./' /etc/apt/sources.list
+      - uses: actions/checkout@v5
 
-    - name: Fix Ubuntu 22.04
-      if: ${{ matrix.os == 'ubuntu-22.04' }}
-      run: |
-        sudo apt-get update
-        sudo apt-get remove libunwind-14 -y
-        sudo apt-get install libunwind-dev libaom-dev libsdl2-dev -y
+      - uses: sreimers/pr-dependency-action@v1
+        with:
+          name: re
+          repo: https://github.com/baresip/re
+          secret: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: install packages
-      if: ${{ runner.os == 'Linux' }}
-      run: |
-        sudo apt-get update && sudo apt-get install -y \
-                            libasound2-dev \
-                            libavcodec-dev \
-                            libavdevice-dev \
-                            libavformat-dev \
-                            libcodec2-dev \
-                            libfdk-aac-dev \
-                            libglib2.0-dev \
-                            libgstreamer1.0-dev \
-                            libgtk-3-dev \
-                            libjack-jackd2-dev \
-                            libmosquitto-dev \
-                            libmpg123-dev \
-                            libopencore-amrnb-dev \
-                            libopencore-amrwb-dev \
-                            libopus-dev \
-                            libpulse-dev \
-                            libsndfile1-dev \
-                            libspandsp-dev \
-                            libssl-dev \
-                            libvpx-dev \
-                            libx11-dev \
-                            libwebrtc-audio-processing-dev
+      - uses: sreimers/pr-dependency-action@v1
+        with:
+          name: baresip-win32
+          repo: https://github.com/baresip/baresip-win32
+          secret: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: install aac
-      if: ${{ matrix.os == 'ubuntu-22.04' }}
-      run: |
-        sudo apt-get update && sudo apt-get install -y libfdk-aac-dev
+      - name: prepare baresip-win32 repo
+        run: |
+          mv re baresip-win32/
 
-    - name: install pipewire
-      if: ${{ matrix.os == 'ubuntu-22.04' }}
-      run: |
-        sudo apt-get update && sudo apt-get install -y libpipewire-0.3-dev
+      - uses: actions/checkout@v5
+        with:
+          path: baresip-win32/baresip
 
-    - name: install packages
-      if: ${{ runner.os == 'macOS' }}
-      run: |
-        brew install codec2 \
-                        aom \
-                        fdk-aac \
-                        ffmpeg@7 \
-                        jack \
-                        mpg123 \
-                        spandsp \
-                        sdl2 \
-                        glib-utils \
-                        pkg-config
+      - uses: actions/cache@v4
+        id: openssl
+        with:
+          path: baresip-win32/openssl
+          key: ${{ runner.os }}-mingw-openssl-3.5.0
 
-    - uses: sreimers/pr-dependency-action@v1
-      with:
-        name: re
-        repo: https://github.com/baresip/re
-        secret: ${{ secrets.GITHUB_TOKEN }}
+      - name: build openssl
+        if: steps.openssl.outputs.cache-hit != 'true'
+        run: |
+          wget https://www.openssl.org/source/openssl-3.5.0.tar.gz
+          tar -xzf openssl-3.5.0.tar.gz
+          mv openssl-3.5.0 baresip-win32/openssl
+          make -j$(nproc) -C baresip-win32 openssl
 
-    - name: make re
-      run: |
-        cmake -S re -B re/build
-        cmake --build re/build -j
-        mv re ../.
+      - name: build baresip (MinGW)
+        run: make -j$(nproc) -C baresip-win32 baresip
 
-    - name: ldconfig
-      if: ${{ runner.os == 'Linux' }}
-      run: sudo ldconfig
+      - name: Upload baresip.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: baresip-exe
+          path: baresip-win32/baresip/build/baresip.exe
+          retention-days: 7
 
-    - name: make baresip linux
-      if: ${{ runner.os == 'Linux' }}
-      run: |
-        cmake -B build -DCMAKE_C_FLAGS="-Werror" && cmake --build build -j
+      - name: Upload selftest.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-exe
+          path: baresip-win32/baresip/build/test/selftest.exe
+          retention-days: 7
 
-    - name: make baresip macOS
-      if: ${{ runner.os == 'macOS' }}
-      run: |
-        cmake -B build -DCMAKE_C_FLAGS="-Werror" && cmake --build build -j
+  wintest:
+    name: Run Windows selftest
+    runs-on: windows-latest
+    needs: mingw-build
 
-    - name: baresip static
-      run: |
-        rm -Rf build
-        cmake -B build -DSTATIC=1 -DCMAKE_C_FLAGS="-Werror" -DMODULES="g711;ausine;fakevideo;auconv;auresamp;dtls_srtp;srtp;aufile" && cmake --build build -j
+    steps:
+      - uses: actions/download-artifact@v4
 
-    - name: selftest
-      run: ./build/test/selftest
+      - uses: actions/checkout@v5
+        with:
+          path: baresip
+
+      - name: cv2pdb
+        run: |
+          curl -L https://github.com/rainers/cv2pdb/releases/download/v0.52/cv2pdb-0.52.zip --output cv2pdb.zip
+          unzip cv2pdb.zip
+          ls -lha
+        shell: bash
+
+      - name: prepare selftest.exe
+        run: mv selftest-exe/selftest.exe baresip/ && cd baresip && ../cv2pdb.exe ./selftest.exe
+        shell: bash
+
+      - name: run selftest.exe
+        run: cd baresip && ./selftest.exe
+        shell: bash
