@@ -36,7 +36,118 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
 include(GNUInstallDirs)
 include(CheckIncludeFile)
-find_package(RE REQUIRED)
+
+option(BARESIP_FETCH_RE "Automatically download libre (re) if it is not available" ON)
+set(BARESIP_RE_FETCH_REPOSITORY "https://github.com/baresip/re.git" CACHE STRING
+  "Git repository used when fetching libre (re)")
+set(BARESIP_RE_FETCH_TAG "main" CACHE STRING
+  "Git tag or branch used when fetching libre (re)")
+mark_as_advanced(BARESIP_RE_FETCH_REPOSITORY BARESIP_RE_FETCH_TAG)
+
+set(RE_INCLUDE_DIRS "")
+set(RE_LIBRARIES "")
+
+# Prefer a modern CMake config package if available.
+find_package(re CONFIG QUIET HINTS ../re/cmake)
+
+if(re_FOUND)
+  if(NOT RE_LIBRARIES AND re_LIBRARIES)
+    set(RE_LIBRARIES ${re_LIBRARIES})
+  endif()
+
+  if(NOT RE_INCLUDE_DIRS AND re_INCLUDE_DIRS)
+    set(RE_INCLUDE_DIRS ${re_INCLUDE_DIRS})
+  endif()
+
+  if((NOT RE_LIBRARIES OR NOT RE_INCLUDE_DIRS) AND TARGET re::re)
+    if(NOT RE_LIBRARIES)
+      set(RE_LIBRARIES re::re)
+    endif()
+
+    if(NOT RE_INCLUDE_DIRS)
+      get_target_property(_re_includes re::re INTERFACE_INCLUDE_DIRECTORIES)
+      if(_re_includes AND NOT _re_includes MATCHES "-NOTFOUND$")
+        foreach(_re_dir IN LISTS _re_includes)
+          if(NOT _re_dir OR _re_dir MATCHES "^\\$<")
+            continue()
+          endif()
+          list(APPEND RE_INCLUDE_DIRS ${_re_dir})
+        endforeach()
+        unset(_re_dir)
+      endif()
+      unset(_re_includes)
+    endif()
+  endif()
+endif()
+
+# Fallback to the legacy FindRE.cmake module if necessary.
+if(NOT RE_LIBRARIES OR NOT RE_INCLUDE_DIRS)
+  find_package(RE QUIET)
+
+  if(RE_FOUND)
+    if(NOT RE_LIBRARIES AND RE_LIBRARY)
+      set(RE_LIBRARIES ${RE_LIBRARY})
+    endif()
+
+    if(NOT RE_INCLUDE_DIRS AND RE_INCLUDE_DIR)
+      set(RE_INCLUDE_DIRS ${RE_INCLUDE_DIR})
+    endif()
+  endif()
+endif()
+
+# As a last resort we can automatically fetch libre.
+if((NOT RE_LIBRARIES OR NOT RE_INCLUDE_DIRS) AND BARESIP_FETCH_RE)
+  include(FetchContent)
+  FetchContent_Declare(libre
+    GIT_REPOSITORY ${BARESIP_RE_FETCH_REPOSITORY}
+    GIT_TAG ${BARESIP_RE_FETCH_TAG}
+    GIT_SHALLOW TRUE
+  )
+
+  FetchContent_MakeAvailable(libre)
+
+  if(TARGET re::re)
+    set(RE_LIBRARIES re::re)
+  elseif(TARGET re)
+    set(RE_LIBRARIES re)
+  elseif(TARGET libre)
+    set(RE_LIBRARIES libre)
+  endif()
+
+  if(DEFINED libre_SOURCE_DIR)
+    list(APPEND RE_INCLUDE_DIRS
+      ${libre_SOURCE_DIR}/include
+      ${libre_BINARY_DIR}/include)
+  endif()
+
+  if(NOT RE_LIBRARIES)
+    find_library(_libre_fetch_library
+      NAMES re libre
+      PATHS
+        ${libre_BINARY_DIR}
+        ${libre_BINARY_DIR}/lib
+        ${libre_BINARY_DIR}/Release
+        ${libre_BINARY_DIR}/Debug
+        ${libre_BINARY_DIR}/RelWithDebInfo
+        ${libre_BINARY_DIR}/MinSizeRel
+    )
+
+    if(_libre_fetch_library)
+      set(RE_LIBRARIES ${_libre_fetch_library})
+    endif()
+  endif()
+endif()
+
+if(NOT RE_LIBRARIES OR NOT RE_INCLUDE_DIRS)
+  message(FATAL_ERROR "libre (re) dependency not found. Install libre manually or enable BARESIP_FETCH_RE.")
+endif()
+
+list(REMOVE_DUPLICATES RE_INCLUDE_DIRS)
+list(REMOVE_ITEM RE_INCLUDE_DIRS "")
+
+set(RE_INCLUDE_DIR ${RE_INCLUDE_DIRS})
+set(RE_LIBRARY ${RE_LIBRARIES})
+set(RE_FOUND TRUE)
 
 ##############################################################################
 #
@@ -94,11 +205,6 @@ else()
     "$<$<COMPILE_LANGUAGE:C>:${c_flags}>"
   )
 endif()
-
-
-
-find_package(re CONFIG REQUIRED HINTS ../re/cmake)
-
 list(APPEND RE_DEFINITIONS
   VERSION="${PROJECT_VERSION_FULL}"
   VER_MAJOR=${PROJECT_VERSION_MAJOR}
