@@ -75,7 +75,11 @@ jobs:
         shell: cmd
         run: |
           call "${{ matrix.config.environment_script }}"
+          if not exist re\include mkdir re\include
+          copy /Y include\msvc_compat\unistd.h re\include\unistd.h
           cmake -S re -B re/build -G "Ninja" -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=${{ matrix.config.disable_openssl }}
+          if not exist re\build\include mkdir re\build\include
+          copy /Y include\msvc_compat\unistd.h re\build\include\unistd.h
           cmake --build re/build -j
           mv re ../.
 
