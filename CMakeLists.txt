@@ -158,6 +158,10 @@ set(RE_INCLUDE_DIR ${RE_INCLUDE_DIRS})
 set(RE_LIBRARY ${RE_LIBRARIES})
 set(RE_FOUND TRUE)
 
+if(WIN32)
+  find_library(BARESIP_WSPI32_LIB NAMES wspi32)
+endif()
+
 if(MSVC AND DEFINED BARESIP_MSVC_COMPAT_DIR)
   set(_re_targets)
 
@@ -186,14 +190,19 @@ if(MSVC AND DEFINED BARESIP_MSVC_COMPAT_DIR)
         target_sources(${_re_target} PRIVATE ${BARESIP_MSVC_COMPAT_SOURCES})
 
         if(NOT _target_type STREQUAL "OBJECT_LIBRARY")
-          target_link_libraries(${_re_target}
-            PRIVATE
-              legacy_stdio_definitions
-              ws2_32
-              wsock32
-              wspi32
-              crypt32
+          set(_re_compat_libs
+            legacy_stdio_definitions
+            ws2_32
+            wsock32
+            crypt32
           )
+
+          if(BARESIP_WSPI32_LIB)
+            list(APPEND _re_compat_libs ${BARESIP_WSPI32_LIB})
+          endif()
+
+          target_link_libraries(${_re_target} PRIVATE ${_re_compat_libs})
+          unset(_re_compat_libs)
         endif()
       endif()
       unset(_target_type)
@@ -461,8 +470,11 @@ if(WIN32)
     legacy_stdio_definitions
     ws2_32
     wsock32
-    wspi32
   )
+
+  if(BARESIP_WSPI32_LIB)
+    list(APPEND LINKLIBS ${BARESIP_WSPI32_LIB})
+  endif()
 endif()
 
 if(STATIC)
