@@ -184,13 +184,12 @@ if(MSVC AND DEFINED BARESIP_MSVC_COMPAT_DIR)
 
   if(DEFINED libre_SOURCE_DIR)
     set(_libre_source_include_dir "${libre_SOURCE_DIR}/include")
-    if(EXISTS "${_libre_source_include_dir}")
-      configure_file(
-        "${BARESIP_MSVC_COMPAT_DIR}/unistd.h"
-        "${_libre_source_include_dir}/unistd.h"
-        COPYONLY
-      )
-    endif()
+    file(MAKE_DIRECTORY "${_libre_source_include_dir}")
+    configure_file(
+      "${BARESIP_MSVC_COMPAT_DIR}/unistd.h"
+      "${_libre_source_include_dir}/unistd.h"
+      COPYONLY
+    )
     unset(_libre_source_include_dir)
   endif()
 
