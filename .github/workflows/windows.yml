@@ -22,6 +22,7 @@ jobs:
             environment_script: "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat",
             build: "Debug",
             openssl: true,
+            openssl_version: "3.5.2",
             disable_openssl: "OFF",
             testing: true
           }
@@ -31,6 +32,7 @@ jobs:
             environment_script: "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat",
             build: "Release",
             openssl: true,
+            openssl_version: "3.5.2",
             disable_openssl: "OFF",
             testing: true
           }
@@ -49,8 +51,48 @@ jobs:
 
       - name: Install OpenSSL
         if: ${{ matrix.config.openssl }}
+        shell: pwsh
         run: |
-          choco install --no-progress ${{ matrix.config.choco }} openssl --version 3.5.2
+          $ErrorActionPreference = 'Stop'
+
+          function Test-ChocoSuccess {
+            param([int]$Code)
+            return ($Code -eq 0 -or $Code -eq 3010)
+          }
+
+          $extraPackages = '${{ matrix.config.choco }}'
+          if (-not [string]::IsNullOrWhiteSpace($extraPackages)) {
+            choco install --no-progress $extraPackages
+            if (-not (Test-ChocoSuccess $LASTEXITCODE)) {
+              throw "Failed to install Chocolatey packages: $extraPackages (exit code $LASTEXITCODE)"
+            }
+          }
+
+          $preferredVersion = '${{ matrix.config.openssl_version }}'
+          if ([string]::IsNullOrWhiteSpace($preferredVersion)) {
+            $preferredVersion = '3.5.2'
+          }
+
+          Write-Host "Attempting to install OpenSSL $preferredVersion from Chocolatey."
+          choco install --no-progress openssl --version $preferredVersion
+          $installExit = $LASTEXITCODE
+
+          if (Test-ChocoSuccess $installExit) {
+            Write-Host "OpenSSL $preferredVersion installed successfully."
+            return
+          }
+
+          Write-Warning "OpenSSL $preferredVersion could not be installed (exit code $installExit). Falling back to the latest available package."
+          choco uninstall --yes openssl | Out-Null
+
+          choco install --no-progress openssl
+          $fallbackExit = $LASTEXITCODE
+
+          if (-not (Test-ChocoSuccess $fallbackExit)) {
+            throw "Fallback installation of OpenSSL failed with exit code $fallbackExit."
+          }
+
+          Write-Host "Installed the latest available OpenSSL package from Chocolatey (exit code $fallbackExit)."
 
       - uses: sreimers/pr-dependency-action@v1
         with:
