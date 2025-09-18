@@ -9,6 +9,8 @@
 #include <time.h>
 #include <baresip.h>
 #include <stdlib.h>
+#include <limits.h>
+#include <stdint.h>
 #include <gtk/gtk.h>
 #include <gio/gio.h>
 #include "gtk_mod.h"
@@ -39,7 +41,8 @@
 
 
 struct gtk_mod {
-	thrd_t thread;
+        thrd_t thread;
+        bool thread_started;
 	bool run;
 	bool contacts_inited;
 	struct mqueue *mq;
@@ -1165,16 +1168,20 @@ static void vu_dec_destructor(void *arg)
 
 static int16_t calc_avg_s16(const int16_t *sampv, size_t sampc)
 {
-	int32_t v = 0;
-	size_t i;
+        uint64_t sum = 0;
+        size_t i;
 
-	if (!sampv || !sampc)
-		return 0;
+        if (!sampv || !sampc)
+                return 0;
 
-	for (i=0; i<sampc; i++)
-		v += abs(sampv[i]);
+        for (i=0; i<sampc; i++)
+                sum += (unsigned)abs(sampv[i]);
 
-	return v/sampc;
+        sum /= sampc;
+        if (sum > (uint64_t)INT16_MAX)
+                sum = INT16_MAX;
+
+        return (int16_t)sum;
 }
 
 
@@ -1313,10 +1320,12 @@ static int module_init(void)
 #endif
 
 	/* start the thread last */
-	err = thread_create_name(&mod_obj.thread, "gtk", gtk_thread,
-				&mod_obj);
-	if (err)
-		return err;
+        err = thread_create_name(&mod_obj.thread, "gtk", gtk_thread,
+                                &mod_obj);
+        if (err)
+                return err;
+
+        mod_obj.thread_started = true;
 
 	return 0;
 }
@@ -1329,8 +1338,10 @@ static int module_close(void)
 		gtk_main_quit();
 		gdk_threads_leave();
 	}
-	if (mod_obj.thread)
-		thrd_join(mod_obj.thread, NULL);
+        if (mod_obj.thread_started) {
+                thrd_join(mod_obj.thread, NULL);
+                mod_obj.thread_started = false;
+        }
 	mod_obj.mq = mem_deref(mod_obj.mq);
 	aufilt_unregister(&vumeter);
 	message_unlisten(baresip_message(), message_handler);
