@@ -58,6 +58,19 @@ jobs:
           repo: https://github.com/baresip/re
           secret: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install GTK3 dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $prefix = 'C:\msys64\mingw64'
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm --needed mingw-w64-x86_64-gtk3 mingw-w64-x86_64-pkgconf"
+          Add-Content -Path $env:GITHUB_PATH -Value "$prefix\bin"
+          Add-Content -Path $env:GITHUB_ENV -Value ("PKG_CONFIG_PATH=" + $prefix.Replace('\\','/') + "/lib/pkgconfig;" + $prefix.Replace('\\','/') + "/share/pkgconfig")
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG_CONFIG_EXECUTABLE=$prefix\bin\pkg-config.exe"
+          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$prefix\include;$env:INCLUDE"
+          Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
+          Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_PREFIX_PATH=$prefix;$env:CMAKE_PREFIX_PATH"
+
       - name: make re
         shell: cmd
         run: |
@@ -72,6 +85,12 @@ jobs:
           call "${{ matrix.config.environment_script }}"
           cmake -S . -B build -G "Ninja" -DCMAKE_C_FLAGS="/WX" -DCMAKE_BUILD_TYPE=${{ matrix.config.build }} -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=${{ matrix.config.disable_openssl }}
           cmake --build build -j
+
+      - name: Verify GTK module detection
+        shell: cmd
+        run: |
+          call "${{ matrix.config.environment_script }}"
+          cmake -LA build | findstr /R /C:"MODULES_DETECTED:INTERNAL=.*gtk"
 
       - name: selftest
         if: ${{ matrix.config.testing }}
