@@ -229,7 +229,14 @@ if(APPLE)
 endif()
 
 if(MSVC)
-  add_compile_options("/W3")
+  # Windows SDK headers emit numerous unknown `_warning` pragmas when
+  # building with MSVC.  Those warnings (C4068) become fatal once `/WX`
+  # is enabled in the CI configuration, so silence them explicitly while
+  # keeping the requested warning level for the project sources.
+  add_compile_options(
+    "/W3"
+    "/wd4068"
+  )
 else()
   add_compile_options(
     -Wall
