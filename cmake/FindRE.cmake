@@ -16,6 +16,9 @@ find_library(RE_LIBRARY
     ../re
     ../re/build
     ../re/build/Debug
+    ../re/build/Release
+    ../re/build/RelWithDebInfo
+    ../re/build/MinSizeRel
     ${PC_LIBRE_LIBDIR}
     ${PC_LIBRE_LIBRARY_DIRS}
   PATHS /usr/local/lib64 /usr/lib64 /usr/local/lib /usr/lib
